@@ -29,15 +29,18 @@ class TrainCMCConfig:
 
     # paths
     dataset = 'STL-10'
-    # data_folder = "d:/projects/data/STL-10"
-    data_folder = "/data/data/STL-10"
+    # data_folder = "d:/data/STL-10"
+    # data_folder = "~/zdata/data/STL-10"
+    data_folder = "/data/zzh/data/STL-10"
 
     # resume path
-    resume = "/data/data/cmc_models/ckpt_epoch_230.pth"
+    # resume = "d:/data/cmc_models/ckpt_epoch_220.pth"
+    # resume = "~/zdata/data/cmc_models/ckpt_epoch_230.pth"
+    resume = "/data/zzh/data/cmc_models/ckpt_epoch_220.pth"
 
-    print_freq = 10
+    print_freq = 1
     tb_freq = 500
-    save_freq = 10
+    save_freq = 1
 
     # optimization
     learning_rate = 0.03
@@ -65,6 +68,7 @@ class TrainCMCConfig:
 
     # data crop threshold
     candidate_number = 20
+    augment_protection = 0.2
     crop_low = 0.2
 
     # save path

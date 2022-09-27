@@ -25,6 +25,8 @@ from NCE.NCECriterion import NCESoftmaxLoss
 
 from dataset import ImageFolderInstance
 
+import matplotlib.pyplot as plt
+
 try:
     from apex import amp, optimizers
 except ImportError:
@@ -104,7 +106,7 @@ def set_optimizer(args, model):
     return optimizer
 
 
-def generate_batch(inputs, indexes, candidate_number, model, contrast, criterion_l, criterion_ab,):
+def generate_batch(inputs, indexes, candidate_number, augment_protection, model, contrast, criterion_l, criterion_ab):
     # print(inputs.shape)
     model.eval()
     outputs = torch.Tensor([]).cuda()
@@ -112,19 +114,23 @@ def generate_batch(inputs, indexes, candidate_number, model, contrast, criterion
     for image, index in zip(inputs, indexes):
         max_measure = -999
         max_image = image
+        with torch.no_grad():
+            feat_l, feat_ab = model(max_image.unsqueeze(0))
+            out_l, out_ab = contrast.get_out_l_ab(feat_l, feat_ab, index)
+            base_measure = criterion_l(out_l) + criterion_ab(out_ab)
         for i in range(candidate_number):
-            temp_image = transforms.RandomResizedCrop(224, scale=(0.2, 1))(image).unsqueeze(0)
-            # print(temp_image.shape)
-            with torch.no_grad():
-                feat_l, feat_ab = model(temp_image)
-                out_l, out_ab = contrast.get_out_l_ab(feat_l, feat_ab, index)
-                measure = criterion_l(out_l)+criterion_ab(out_ab)
-                if measure.item() > max_measure:
-                    max_image = temp_image
-                    max_measure = measure.item()
+            while max_measure == -999:
+                temp_image = transforms.RandomResizedCrop(224, scale=(0.2, 1))(image).unsqueeze(0)
+                with torch.no_grad():
+                    feat_l, feat_ab = model(temp_image)
+                    out_l, out_ab = contrast.get_out_l_ab(feat_l, feat_ab, index)
+                    measure = criterion_l(out_l)+criterion_ab(out_ab)
+                    if max_measure < measure.item() <= base_measure.item()*(1+augment_protection):
+                        max_image = temp_image
+                        max_measure = measure.item()
+            augment_protection += augment_protection
         outputs = torch.cat((outputs, max_image), dim=0)
         measures.append(max_measure)
-    print(measures)
     model.train()
     return outputs
 
@@ -154,7 +160,9 @@ def train(epoch, train_loader, model, contrast, criterion_l, criterion_ab, optim
             index = index.cuda()
             inputs = inputs.cuda()
 
-        inputs = generate_batch(inputs, index, opt.candidate_number, model, contrast, criterion_l, criterion_ab)
+        inputs = generate_batch(inputs, index, opt.candidate_number, opt.augment_protection, model, contrast,
+                                criterion_l, criterion_ab)
+        print(inputs.shape)
         # ===================forward=====================
         feat_l, feat_ab = model(inputs)
         out_l, out_ab = contrast(feat_l, feat_ab, index)
@@ -165,7 +173,6 @@ def train(epoch, train_loader, model, contrast, criterion_l, criterion_ab, optim
         ab_prob = out_ab[:, 0].mean()
 
         loss = l_loss + ab_loss
-
         # ===================backward=====================
         optimizer.zero_grad()
         if opt.amp:
@@ -253,6 +260,7 @@ def main():
         time1 = time.time()
         l_loss, l_prob, ab_loss, ab_prob = train(epoch, train_loader, model, contrast, criterion_l, criterion_ab,
                                                  optimizer, args)
+        break
         time2 = time.time()
         print('epoch {}, total time {:.2f}'.format(epoch, time2 - time1))
 
